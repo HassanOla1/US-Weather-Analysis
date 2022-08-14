@@ -1,0 +1,205 @@
+---
+title: "The Impact of Storms and other severe weather events on US public Health and Economic"
+author: "Hassan Olakunle Durojaiye"
+date: '2022-08-07'
+output: 
+  html_document:
+    code_folding: show
+    theme:
+      bg: "#202123"
+      fg: "#B8BCC2"
+      primary: "#EA80FC"
+      base_font:
+        google: Prompt
+      heading_font:
+        google: Proza Libre
+      version: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage. The following analysis investigates which types of severe weather events are most harmful on:
+
+1.  Health (injuries and fatalities)
+2.  Property and crops (economic consequences)
+
+Information on the Data: [Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+## Loading and preprocessing the data
+
+```{r}
+sessionInfo()
+library(tidyverse)
+library(ggplot2)
+library(plyr)
+
+urlink <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+
+download.file(urlink, destfile = paste0("C:/Users/USER/Documents","/repdata%2Fdata%2FStormData.csv.bz2"))
+
+
+storm_data <- read.csv("C:/Users/USER/Documents/repdata%2Fdata%2FStormData.csv.bz2", stringsAsFactors = FALSE)
+
+```
+
+overview of the data
+
+```{r}
+dim(storm_data)
+summary(storm_data)
+str(storm_data)
+```
+
+convert the date
+
+```{r}
+storm_data$BGN_DATE <- as.Date(storm_data$BGN_DATE," %m/%d/Y%")
+
+```
+
+### Data Subsetting
+
+Subset the dataset on the parameters of interest. Basically, we remove the columns we don't need for clarity.
+
+```{r}
+# selecting some variables from original dataset
+data_clean <- subset(storm_data, select = c("STATE__","EVTYPE","FATALITIES","INJURIES","PROPDMG","PROPDMGEXP","CROPDMG","CROPDMGEXP"))
+
+```
+
+#### Reducing the sub-categories caused by a lot of words with uppercase and lowercase:
+
+```{r}
+## convert column names to lowercase
+colnames(data_clean) <- tolower(colnames(data_clean))
+
+## evtype names are both UPPER and lowercase make them all lowercase for grouping
+data_clean$evtype <- trimws(tolower(data_clean$evtype), c("both"))
+## Some events are plural, convert plural to singular events
+data_clean$evtype <- ifelse (grepl(".*s$", data_clean$evtype),
+                             substr(data_clean$evtype, 1, nchar(data_clean$evtype) - 1), 
+                             data_clean$evtype)
+## Convert all versions of flood to flood
+data_clean$evtype <- ifelse (grepl("flood", data_clean$evtype), 
+                             "flood",
+                             data_clean$evtype)
+## Convert all versions of hurriance to huricane
+data_clean$evtype <- ifelse (grepl("hurricane", data_clean$evtype), 
+                             "hurricane", 
+                             data_clean$evtype)
+## Convert all versions of thunderstorm to thunderstorm
+data_clean$evtype <- ifelse (grepl("thunder", data_clean$evtype), 
+                             "thunderstorm", 
+                             data_clean$evtype)
+## Convert all versions of ic* to ice
+data_clean$evtype <- ifelse (grepl("^ic", data_clean$evtype), 
+                             "ice", 
+                             data_clean$evtype)
+## Convert all versions of wint* to winter weather
+data_clean$evtype <- ifelse (grepl("^wint", data_clean$evtype), 
+                             "winter weather", 
+                             data_clean$evtype)
+## Convert all versions of snow to snow
+data_clean$evtype <- ifelse (grepl("snow", data_clean$evtype), 
+                             "snow", 
+                             data_clean$evtype)
+```
+
+## RESULT
+
+### Which of the event type are most harmful to population Health (injuries and fatalities) {#which-of-the-event-type-are-most-harmful-to-population-health-(injuries-and-fatalities}
+
+```{r}
+health_dat <- c("evtype","fatalities", "injuries")
+health_dat <- data_clean[health_dat]
+
+healthSummary <- ddply(health_dat, .(evtype), numcolwise(sum))
+healthSummary$injury_death <- healthSummary$fatalities + healthSummary$injuries
+healthSummary <- subset(healthSummary, healthSummary$injury_death > 0)
+healthSummary <- healthSummary[order(healthSummary$injury_death,decreasing = T),]
+# top 10 fatalities and injuries by event
+top10 <- healthSummary[1:10,]
+head(top10)
+
+```
+
+#### Plot of fatalities and injuries by event (top 10)
+
+```{r}
+top10$events <- factor(top10$evtype, levels=top10$evtype, ordered=TRUE)
+g <- ggplot(top10, aes(x=as.factor(events),y=injury_death)) + 
+        geom_bar(stat = "identity",color = "red",fill="pink") +
+        ylab("Total of injuries") + xlab("Event Type") +
+        ggtitle("Fatalities and Injuries by events in U.S") +
+        theme(axis.text.x = element_text(angle = 90, vjust = .5))
+g
+```
+
+### TORNADO has caused the most casualties in the population. According to the graphic above. {#tornado-has-caused-the-most-casualties-in-the-population.-according-to-the-graphic-above.}
+
+#### Checking the unique values of propdmgexp and cropdmgexp variable
+
+```{r}
+unique(data_clean$propdmgexp)
+unique(data_clean$cropdmgexp)
+```
+
+### Across the United States, which types of events have the greatest economic consequences?
+
+```{r}
+## Convert property and crop damage to dollar values
+data_clean$property.damage.total <- as.numeric(mapvalues(data_clean$propdmgexp,
+                                                         c("K","M","", "B","m","+","0","5","6","?","4","2","3","h","7","H","-","1","8"), 
+                                                         c(10^3,10^6, 1, 10^9,10^6,  1,  1,10^5,10^6,  1,10^4,10^2,10^3,  1,10^7,10^2,  1, 10,10^8))) * data_clean$propdmg
+data_clean$crop.damage.total <- as.numeric(mapvalues(data_clean$cropdmgexp,
+                                                     c("","M","K","m","B","?","0","k","2"),
+                                                     c( 1,10^6,10^3,10^6,10^9,1,1,10^3,10^2))) * data_clean$cropdmg
+## Create new column with total dollar damage to both crops and property
+data_clean$total.damage <- data_clean$property.damage.total + data_clean$crop.damage.total
+```
+
+#### Summarizing the data by event type
+
+```{r}
+## Group dollar damagae by evtype
+event_total <- ddply(data_clean,.(evtype), summarize,property = sum(property.damage.total),
+                     crop = sum(crop.damage.total),PropertyDamage = sum(total.damage), injuries= sum(injuries), fatalities = sum(fatalities))
+
+## Order events by damage amount
+event_total_ordered1 <- event_total[order(event_total$PropertyDamage, decreasing = TRUE),]
+# top 10 Property damage by event
+top10 <- event_total_ordered1[1:10,]
+head(top10)
+```
+
+#### Plot of Property Damage by event (top 10)
+
+```{r}
+top10$events <- factor(top10$evtype, levels=top10$evtype, ordered=TRUE)
+g <- ggplot(top10, aes(x=as.factor(events),y=PropertyDamage/10^9)) +
+        labs(x = "Event Type") + 
+        labs(y = "Cost of damages (1B)") +
+        labs(title = "Damage by Weather Event") +
+        geom_bar(stat = "identity",color = "red",fill="darkgreen") + 
+        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(g)
+```
+
+**This demonstrates that FLOODING was the most damaging event related to total property damage.**
+
+```{r}
+top10$events <- factor(top10$evtype, levels=top10$evtype, ordered=TRUE)
+g <- ggplot(top10, aes(x=as.factor(events),y=crop)) +
+        labs(x = "Event Type") + 
+        labs(y = "Cost of crop damages (1B)") +
+        labs(title = "Crop Damage by Weather Event") +
+        geom_bar(stat = "identity",color = "red",fill="green") + 
+        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(g)
+```
+
+**This demonstrates that DROUGHTS was the most damaging event related to crop damage.**
